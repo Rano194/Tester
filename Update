@@ -1,0 +1,85 @@
+getgenv().Config = {
+["Api-login"] = "admin"
+}
+
+--- 
+
+urlwebsite = "http://91.214.78.166:5000"
+login = getgenv().Config["Api-login"]
+local requestFunc = syn and syn.request or http_request or request
+
+do -- Check License
+    local res = requestFunc({ Url = urlwebsite.."/api/GetLicense?user="..apilogin, Method = "GET" })
+    local data = game:GetService("HttpService"):JSONDecode(res.Body)
+
+    if data.Licence == false then
+        game.Players.LocalPlayer:Kick("Access denied: Username not found or your license has expired.")
+    end
+end
+
+do -- Check storage
+    local res = requestFunc({ Url = urlwebsite.."/api/GetStorageNickname?user="..apilogin, Method = "GET" })
+    local data = game:GetService("HttpService"):JSONDecode(res.Body)
+
+    if game.LocalPlayer.name == data.storage then
+        local test = nil
+    else
+        game.Players.LocalPlayer:Kick("Access denied: Nickname does not match your profile or no nickname has been set")
+    end
+end
+
+local clientData = require(game.ReplicatedStorage.ClientModules.Core.ClientData)
+local playerData = clientData.get_data()[tostring(game.Players.LocalPlayer)]
+local KindDB = game:GetService("ReplicatedStorage"):WaitForChild("ClientDB"):WaitForChild("Inventory"):WaitForChild("KindDB")
+local kindData = require(KindDB)
+
+local function urlencode(str)
+    return str and str:gsub("([^%w%-_%.%~])", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end) or ""
+end
+
+local function getPetInfo(petkind)
+    for _, itemData in pairs(kindData) do
+        if itemData.kind == petkind then
+            local imgID = itemData.image or "unknown"
+            imgID = string.gsub(imgID, "rbxassetid://", "")
+            return {
+                name = itemData.name or "unknown",
+                imgID = imgID,
+                rarity = itemData.rarity or "unknown"
+            }
+        end
+    end
+    return {name = "unknown", imgID = "unknown", rarity = "unknown"}
+end
+
+local petCounts = {}
+
+for _, pet in pairs(playerData.inventory.pets or {}) do
+    local kind = pet.kind
+    petCounts[kind] = petCounts[kind] or {classic = 0, neon = 0, mega = 0}
+
+    if pet.properties then
+        if pet.properties.mega_neon then
+            petCounts[kind].mega += 1
+        elseif pet.properties.neon then
+            petCounts[kind].neon += 1
+        else
+            petCounts[kind].classic += 1
+        end
+    else
+        petCounts[kind].classic += 1
+    end
+end
+
+for kind, data in pairs(petCounts) do
+    local info = getPetInfo(kind)
+
+    local url = string.format(
+        urlwebsite.."/api/add_storage?user="..login.."&name=%s&remote=%s&classic=%d&neon=%d&mega=%d&rarity=%s",
+        urlencode(info.name), urlencode(kind), data.classic, data.neon, data.mega, urlencode(info.rarity)
+    )
+
+    local res = requestFunc({ Url = url, Method = "GET" })
+end 
